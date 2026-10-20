@@ -113,6 +113,7 @@ npm run release      # scripts/release.sh: test, bump version, build both instal
   - The `LNK4099 ... .pdb` linker warnings are harmless.
 - **macOS SDK gotcha (seen on the dev Mac):** if the Command Line Tools are older than the default SDK, linking fails with `tapi error: malformed file ... arm64e` unless you prefix Rust/Tauri builds with `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk`. `release.sh` sets it automatically when that SDK exists.
 - **If DMG packaging fails** with `error running bundle_dmg.sh ... Searching for mounted interstitial disk image`, a Payback DMG is probably open in Finder (mounted at `/Volumes/Payback`). Eject it, and also eject any leftover `dmg.XXXX` volume (`hdiutil info` lists them). Then rerun. The script reuses the version, since it wasn't consumed.
+- **Every release gets an entry at the top of `CHANGELOG.md`**: the version, the date, and what changed, written for people who use the app.
 - **After any change to the app's code** (Rust, UI, icons or Tauri config), finish with `npm run release` so `releases/` has current installers. It bumps the patch version by default. Keep the old DMGs. Skip this for changes that only touch docs.
 - The icon source is `src-tauri/icons/icon-source.png` (drawn with PIL). To regenerate the other sizes, run `npx tauri icon icons/icon-source.png -o icons` from `src-tauri`, then delete the `android/` and `ios/` folders it creates.
 - **Official releases come from GitHub Actions.**
