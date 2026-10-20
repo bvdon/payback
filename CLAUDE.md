@@ -8,15 +8,17 @@ It's built the same way as Stint, a sibling time-tracker project: Tauri 2, a Rus
 **Targets:** macOS (`.dmg`, universal Intel + Apple Silicon) and Windows (`.msi` / NSIS `.exe` installer).
 
 ## Status
-v0.1.1 built on 2026-10-19 (0.1.1 added lender and borrower). All v1 features below work:
+v0.1.2 built on 2026-10-19 (0.1.1 added lender and borrower, 0.1.2 added the Mac "Check for Updates…" menu item). All v1 features below work:
 - 26 core tests pass.
 - The UI was checked in a browser against the dev server, in light and dark mode.
 - The PDF statement was checked visually.
-- The universal Mac DMG builds and launches (`releases/Payback-0.1.1.dmg`).
-- The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.1-windows-setup.exe`).
+- The universal Mac DMG builds and launches (`releases/Payback-0.1.2.dmg`).
+- The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.2-windows-setup.exe`).
+
+- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. The v0.1.1 release build passed and made a release with `.dmg`, `-setup.exe` and `.msi`, which is now published (`/releases/latest` points to v0.1.1). v0.1.2 hasn't been committed, tagged or pushed yet.
 
 **Not done yet:**
-- The Windows `.exe` has not been run on a real Windows PC.
+- No installer has been run on a real Windows PC.
 - The Tauri window hasn't been clicked through by hand. Only the browser UI and the API were exercised.
 
 ## Features (v1)
@@ -71,6 +73,7 @@ src/                      React 19 + TypeScript UI, bundled with esbuild (script
 - `main.rs` defines the commands `call`, `export_file`, `read_text_file`, `backup_now`, `restore_backup`, `app_paths` and `reveal`. `reveal` uses `open -R` on macOS and `explorer /select,` on Windows.
 - The daily backup runs at launch and then every 30 minutes, and only actually saves one if the last is over 20 hours old.
 - If `payback.json` exists but can't be read, every command returns that error. The UI shows "couldn't open its data", and the file is never overwritten.
+- **Mac menu:** the standard Tauri menu plus "Check for Updates…" under About in the Payback menu. It opens https://github.com/bvdon/payback/releases/latest in the browser and doesn't compare versions. It's macOS-only, since Windows has no app menu. GitHub's `latest` skips drafts, so a release has to be published before the link reaches it.
 - Plugins: dialog and single-instance. There's no tray. The normal title bar is used on both OSes.
 
 ### UI (src/)

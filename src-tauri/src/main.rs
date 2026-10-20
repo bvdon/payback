@@ -14,6 +14,8 @@ use tauri::{Manager, State};
 
 const KEEP_BACKUPS: usize = 14;
 const BACKUP_EVERY_SECS: u64 = 20 * 3600;
+#[cfg(target_os = "macos")]
+const RELEASES_URL: &str = "https://github.com/bvdon/payback/releases/latest";
 
 struct AppState {
     api: Mutex<Api>,
@@ -109,6 +111,14 @@ fn reveal(path: String) -> Result<(), String> {
     result.map(|_| ()).map_err(|e| io_error(format!("Couldn't open the folder: {e}")))
 }
 
+/// Open a web page in the default browser.
+#[cfg(target_os = "macos")]
+fn open_url(url: &str) {
+    if let Err(e) = std::process::Command::new("open").arg(url).spawn() {
+        eprintln!("couldn't open {url}: {e}");
+    }
+}
+
 // -- app --------------------------------------------------------------------------
 
 fn show_main(app: &tauri::AppHandle) {
@@ -136,6 +146,23 @@ fn main() {
                 eprintln!("automatic backup failed: {e}");
             }
             app.manage(state);
+
+            // The standard Mac menu, plus "Check for Updates…" under About.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItem, MenuItemKind};
+                let menu = Menu::default(app.handle())?;
+                if let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() {
+                    let updates = MenuItem::with_id(app, "check-updates", "Check for Updates…", true, None::<&str>)?;
+                    app_menu.insert(&updates, 1)?;
+                }
+                app.set_menu(menu)?;
+                app.on_menu_event(|_app, event| {
+                    if event.id() == "check-updates" {
+                        open_url(RELEASES_URL);
+                    }
+                });
+            }
 
             // If the app stays open for days, keep taking the daily backup.
             let handle = app.handle().clone();

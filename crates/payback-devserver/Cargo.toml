@@ -1,6 +1,6 @@
 [package]
 name = "payback-devserver"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT"
 description = "Serves the Payback UI and core API over HTTP for development in a normal browser."

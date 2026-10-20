@@ -2392,7 +2392,7 @@ dependencies = [
 
 [[package]]
 name = "payback"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "payback-core",
  "tauri",
@@ -2403,7 +2403,7 @@ dependencies = [
 
 [[package]]
 name = "payback-core"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "percent-encoding"
