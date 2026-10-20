@@ -1,0 +1,60 @@
+# Builds the installers and attaches them to a draft GitHub Release.
+# Trigger: push a tag like v0.1.0 (or run it by hand from the Actions tab).
+#   macOS:   universal .dmg (Intel + Apple Silicon)
+#   Windows: .msi and setup .exe (NSIS)
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+          - platform: windows-latest
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src-tauri -> target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: cargo test
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: Payback v__VERSION__
+          releaseBody: |
+            **Mac:** download the `.dmg`, open it, and drag Payback to Applications. The first time, macOS says it can't verify the app: open System Settings → Privacy & Security and click **Open Anyway**.
+
+            **Windows:** download the `-setup.exe` (or the `.msi`) and run it. If Windows shows "Windows protected your PC", click **More info** → **Run anyway**.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

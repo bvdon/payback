@@ -1,0 +1,21 @@
+[package]
+name = "payback"
+version = "0.1.1"
+description = "Payback: track simple personal loans"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+payback-core = { path = "../crates/payback-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

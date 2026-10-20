@@ -1,0 +1,10 @@
+node_modules/
+dist/
+target/
+src-tauri/target/
+src-tauri/gen/
+payback-dev.json
+payback-dev.json.tmp
+backups/
+.DS_Store
+releases/

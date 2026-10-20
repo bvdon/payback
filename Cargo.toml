@@ -1,0 +1,6 @@
+# Core library and dev server. The desktop app (src-tauri) is a separate
+# Cargo project so this workspace builds and tests without Tauri installed.
+[workspace]
+resolver = "2"
+members = ["crates/payback-core", "crates/payback-devserver"]
+exclude = ["src-tauri"]
