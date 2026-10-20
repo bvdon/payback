@@ -2,6 +2,8 @@
 # Trigger: push a tag like v0.1.0 (or run it by hand from the Actions tab).
 #   macOS:   universal .dmg (Intel + Apple Silicon)
 #   Windows: .msi and setup .exe (NSIS)
+#   Linux:   .deb, .rpm and .AppImage (built on Ubuntu 22.04 so the AppImage
+#            runs on older distros too)
 name: Release
 
 on:
@@ -22,9 +24,17 @@ jobs:
             args: --target universal-apple-darwin
           - platform: windows-latest
             args: ''
+          - platform: ubuntu-22.04
+            args: ''
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -55,6 +65,8 @@ jobs:
             **Mac:** download the `.dmg`, open it, and drag Payback to Applications. The first time, macOS says it can't verify the app: open System Settings → Privacy & Security and click **Open Anyway**.
 
             **Windows:** download the `-setup.exe` (or the `.msi`) and run it. If Windows shows "Windows protected your PC", click **More info** → **Run anyway**.
+
+            **Linux:** on Ubuntu or Debian, download the `.deb` and install it (`sudo apt install ./Payback_*.deb`). On Fedora, use the `.rpm`. Anywhere else, download the `.AppImage`, make it executable (`chmod +x Payback_*.AppImage`) and run it.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

@@ -5,20 +5,20 @@ Payback is a small desktop app for tracking simple, interest-free personal loans
 
 It's built the same way as Stint, a sibling time-tracker project: Tauri 2, a Rust core, and a React + TypeScript UI bundled with esbuild. When in doubt, follow Stint's conventions.
 
-**Targets:** macOS (`.dmg`, universal Intel + Apple Silicon) and Windows (`.msi` / NSIS `.exe` installer).
+**Targets:** macOS (`.dmg`, universal Intel + Apple Silicon), Windows (`.msi` / NSIS `.exe` installer) and, from 0.1.3, Linux (`.deb`, `.rpm`, `.AppImage`, built only by GitHub Actions).
 
 ## Status
-v0.1.2 built on 2026-10-19 (0.1.1 added lender and borrower, 0.1.2 added the Mac "Check for Updates…" menu item). All v1 features below work:
+v0.1.3 built on 2026-10-19 (0.1.1 added lender and borrower, 0.1.2 added the Mac "Check for Updates…" menu item, 0.1.3 added Linux builds). All v1 features below work:
 - 26 core tests pass.
 - The UI was checked in a browser against the dev server, in light and dark mode.
 - The PDF statement was checked visually.
-- The universal Mac DMG builds and launches (`releases/Payback-0.1.2.dmg`).
-- The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.2-windows-setup.exe`).
+- The universal Mac DMG builds and launches (`releases/Payback-0.1.3.dmg`).
+- The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.3-windows-setup.exe`).
 
-- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. The v0.1.1 release build passed and made a release with `.dmg`, `-setup.exe` and `.msi`, which is now published (`/releases/latest` points to v0.1.1). v0.1.2 hasn't been committed, tagged or pushed yet.
+- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. Releases v0.1.1 and v0.1.2 are both built by Actions and published, each with `.dmg`, `-setup.exe` and `.msi`. `/releases/latest` points to v0.1.2.
 
 **Not done yet:**
-- No installer has been run on a real Windows PC.
+- No installer has been run on a real Windows PC or Linux desktop.
 - The Tauri window hasn't been clicked through by hand. Only the browser UI and the API were exercised.
 
 ## Features (v1)
@@ -51,7 +51,7 @@ crates/payback-core       Rust library, NO third-party crates (std only), works 
 crates/payback-devserver  std-only HTTP server: serves dist/ + core API for browser dev (port 1422)
 src-tauri                 Tauri 2 shell (separate Cargo project, excluded from root workspace)
 src/                      React 19 + TypeScript UI, bundled with esbuild (scripts/build.mjs), not Vite
-.github/workflows         ci.yml: tests + typecheck on mac and windows. release.yml: installers on v* tags
+.github/workflows         ci.yml: tests + typecheck on mac, windows and linux. release.yml: installers on v* tags
 ```
 
 ### payback-core (crates/payback-core/src)
@@ -118,7 +118,9 @@ npm run release      # scripts/release.sh: test, bump version, build both instal
 - **Official releases come from GitHub Actions.**
   - `tauri-apps/tauri-action` runs on `macos-latest` (universal `.dmg`) and `windows-latest` (`.msi` + NSIS `.exe`).
   - Pushing a `v*` tag triggers it, and it uploads the installers to a draft GitHub Release.
+  - It also runs on `ubuntu-22.04` (`.deb`, `.rpm`, `.AppImage`), after installing `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf`. 22.04 rather than latest, so the AppImage's glibc is old enough for older distros.
   - Those builds are the trusted ones for Windows. The local cross-build is a convenience.
+  - **Linux is built only by Actions.** `release.sh` doesn't build it, and nothing has been run on a real Linux desktop yet. Linux data lives in `~/.local/share/dev.payback.desktop/`. There's no Check for Updates menu there (it's Mac-only), and `reveal` opens the containing folder with `xdg-open`.
 - **The apps are unsigned** (no paid certificates):
   - macOS: ad-hoc signing (`signingIdentity: "-"`). First launch needs System Settings → Privacy & Security → Open Anyway.
   - Windows: SmartScreen shows "Windows protected your PC", so click More info → Run anyway. The installer will fetch WebView2 if it's missing (rare on Windows 10/11).
@@ -128,4 +130,4 @@ npm run release      # scripts/release.sh: test, bump version, build both instal
 - Keep `payback-core` std-only and cross-platform. Don't use OS-specific code in the core.
 - Once a version has shipped, any change to the data file shape needs a `format_version` bump and a migration path for older files.
   - The exception is a new **optional** field that reads as blank when missing, like `lender` and `borrower` in 0.1.1. Older app versions ignore unknown keys, so it doesn't need a bump.
-- Requires macOS 12+ and Windows 10+.
+- Requires macOS 12+, Windows 10+, or a Linux with WebKitGTK 4.1 (Ubuntu 22.04+, Fedora 36+ or similar).

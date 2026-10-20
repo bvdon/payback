@@ -1,6 +1,6 @@
 [package]
 name = "payback"
-version = "0.1.2"
+version = "0.1.3"
 description = "Payback: track simple personal loans"
 edition = "2021"
 license = "MIT"

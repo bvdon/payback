@@ -1,4 +1,4 @@
-# Runs the core tests and the UI typecheck on macOS and Windows for every push
+# Runs the core tests and the UI typecheck on macOS, Windows and Linux for every push
 # and pull request, so the core stays cross-platform.
 name: CI
 
@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

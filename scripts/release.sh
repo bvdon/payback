@@ -11,7 +11,8 @@
 #   releases/Payback-<version>-windows-setup.exe
 # Earlier installers are kept. The Windows build is cross-compiled with
 # cargo-xwin (Tauri calls this experimental); GitHub Actions builds both on
-# real machines when a version tag is pushed.
+# real machines when a version tag is pushed, and also builds the Linux
+# .deb/.rpm/.AppImage, which this script doesn't.
 #
 # One-time setup for the Windows build:
 #   brew install nsis llvm
@@ -105,5 +106,5 @@ echo "==> Done:"
 echo "  $dmg"
 echo "  $exe"
 echo
-echo "To publish through GitHub (builds both on real Macs and Windows PCs):"
+echo "To publish through GitHub (builds on real Macs, Windows PCs and Linux):"
 echo "  git commit -am \"Release v$next\" && git tag v$next && git push && git push origin v$next"
