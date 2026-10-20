@@ -8,15 +8,15 @@ It's built the same way as Stint, a sibling time-tracker project: Tauri 2, a Rus
 **Targets:** macOS (`.dmg`, universal Intel + Apple Silicon), Windows (`.msi` / NSIS `.exe` installer) and, from 0.1.3, Linux (`.deb`, `.rpm`, `.AppImage`, built only by GitHub Actions).
 
 ## Status
-v0.1.4 built on 2026-10-20 (0.1.1 added lender and borrower, 0.1.2 added the Mac "Check for Updates…" menu item, 0.1.3 added Linux builds, 0.1.4 added simple interest). All features below work:
-- 31 core tests pass.
+v0.1.5 built on 2026-10-20 (0.1.1 added lender and borrower, 0.1.2 added the Mac "Check for Updates…" menu item, 0.1.3 added Linux builds, 0.1.4 added simple interest, 0.1.5 made Check for Updates compare versions). All features below work:
+- 33 core tests pass.
 - Simple interest (0.1.4) was checked in headless Chrome against the dev server, light and dark mode, plus the PDF and CSV.
 - The UI was checked in a browser against the dev server, in light and dark mode.
 - The PDF statement was checked visually.
-- The universal Mac DMG builds and launches (`releases/Payback-0.1.4.dmg`).
-- The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.4-windows-setup.exe`).
+- The universal Mac DMG builds and launches (`releases/Payback-0.1.5.dmg`).
+- The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.5-windows-setup.exe`).
 
-- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. Releases v0.1.1–v0.1.4 are built by Actions and published. From v0.1.3 each one has `.dmg`, `-setup.exe`, `.msi`, `.deb`, `.rpm` and `.AppImage`, and `/releases/latest` points to v0.1.4. The Linux build passed on its first run.
+- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. Releases v0.1.1–v0.1.5 are built by Actions and published. From v0.1.3 each one has `.dmg`, `-setup.exe`, `.msi`, `.deb`, `.rpm` and `.AppImage`, and `/releases/latest` points to v0.1.5. The Linux build passed on its first run.
 
 **Not done yet:**
 - No installer has been run on a real Windows PC or Linux desktop.
@@ -69,6 +69,7 @@ src/                      React 19 + TypeScript UI, bundled with esbuild (script
 - `interest.rs`: `Interest` (None / Simple(rate)), rate parsing and formatting, and `schedule(loan, today)`, which applies payments and gives the totals. `Loan::balance_cents(today)` and `Loan::view(today)` use it.
 - `transfer.rs`: `.payback` export, plus import `preview` and `apply`, matched by ID.
 - `statement.rs`: the PDF and CSV statements. `backup.rs`: daily auto-backup (keeps 14), backup now, restore.
+- `updates.rs`: `parse_version`, `latest_version` (reads GitHub's release JSON) and `compare` for the Mac update check.
 - `money.rs` parses typed amounts ("$1,234.50") to cents. `date.rs` validates YYYY-MM-DD.
 - `api.rs` holds `Api::call(cmd, json)` and `Api::export(cmd, json)`. The commands are:
   - `app.bootstrap`
@@ -81,7 +82,10 @@ src/                      React 19 + TypeScript UI, bundled with esbuild (script
 - `main.rs` defines the commands `call`, `export_file`, `read_text_file`, `backup_now`, `restore_backup`, `app_paths` and `reveal`. `reveal` uses `open -R` on macOS and `explorer /select,` on Windows.
 - The daily backup runs at launch and then every 30 minutes, and only actually saves one if the last is over 20 hours old.
 - If `payback.json` exists but can't be read, every command returns that error. The UI shows "couldn't open its data", and the file is never overwritten.
-- **Mac menu:** the standard Tauri menu plus "Check for Updates…" under About in the Payback menu. It opens https://github.com/bvdon/payback/releases/latest in the browser and doesn't compare versions. It's macOS-only, since Windows has no app menu. GitHub's `latest` skips drafts, so a release has to be published before the link reaches it.
+- **Mac menu:** the standard Tauri menu plus "Check for Updates…" under About in the Payback menu (macOS-only, since Windows has no app menu). Since 0.1.5 it really checks:
+  - On a background thread, it fetches `https://api.github.com/repos/bvdon/payback/releases/latest` with macOS's `/usr/bin/curl`, so there's no HTTP/TLS crate. It reads `tag_name` and compares it with `app.package_info().version` using `payback_core::updates` (numeric semver compare, so 0.1.10 > 0.1.9).
+  - It then shows a native dialog through tauri-plugin-dialog: "You're up to date"; or "A new version of Payback is available" with Open Download Page / Not Now; or "Couldn't check for updates" with Open Releases Page / OK.
+  - The download page is https://github.com/bvdon/payback/releases/latest. GitHub's `latest` skips drafts, so a release has to be published before the check sees it.
 - Plugins: dialog and single-instance. There's no tray. The normal title bar is used on both OSes.
 
 ### UI (src/)

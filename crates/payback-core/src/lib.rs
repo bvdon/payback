@@ -18,6 +18,7 @@ mod pdf_metrics;
 pub mod statement;
 pub mod store;
 pub mod transfer;
+pub mod updates;
 
 pub use api::Api;
 pub use error::{Error, Result};

@@ -16,6 +16,8 @@ const KEEP_BACKUPS: usize = 14;
 const BACKUP_EVERY_SECS: u64 = 20 * 3600;
 #[cfg(target_os = "macos")]
 const RELEASES_URL: &str = "https://github.com/bvdon/payback/releases/latest";
+#[cfg(target_os = "macos")]
+const LATEST_RELEASE_API: &str = "https://api.github.com/repos/bvdon/payback/releases/latest";
 
 struct AppState {
     api: Mutex<Api>,
@@ -119,6 +121,76 @@ fn open_url(url: &str) {
     }
 }
 
+/// Ask GitHub for the newest release, using the curl that ships with macOS
+/// (so the app needs no HTTP or TLS library of its own).
+#[cfg(target_os = "macos")]
+fn fetch_latest_version() -> Result<String, String> {
+    let out = std::process::Command::new("/usr/bin/curl")
+        .args(["--silent", "--show-error", "--fail", "--location", "--max-time", "15"])
+        .args(["--header", "Accept: application/vnd.github+json", "--user-agent", "Payback"])
+        .arg(LATEST_RELEASE_API)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    payback_core::updates::latest_version(&String::from_utf8_lossy(&out.stdout)).map_err(|e| e.to_string())
+}
+
+/// "Check for Updates…": compare this version with the latest release and
+/// say so, offering the download page when there's something newer.
+#[cfg(target_os = "macos")]
+fn check_for_updates(app: &tauri::AppHandle) {
+    use payback_core::updates::{compare, UpdateStatus};
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+    let current = app.package_info().version.to_string();
+    let app = app.clone();
+    // The network request runs off the main thread so the menu stays responsive.
+    std::thread::spawn(move || {
+        let dialog = app.dialog();
+        match fetch_latest_version().and_then(|latest| compare(&current, &latest).map_err(|e| e.to_string())) {
+            Ok(UpdateStatus::UpToDate) => {
+                dialog
+                    .message(format!("Payback {current} is the newest version. There’s nothing to update."))
+                    .title("You’re up to date")
+                    .kind(MessageDialogKind::Info)
+                    .buttons(MessageDialogButtons::OkCustom("OK".into()))
+                    .show(|_| {});
+            }
+            Ok(UpdateStatus::Available(latest)) => {
+                dialog
+                    .message(format!(
+                        "Payback {latest} is available. You have {current}.\n\nOpen the download page to get the new version? Your loans stay as they are when you update."
+                    ))
+                    .title("A new version of Payback is available")
+                    .kind(MessageDialogKind::Info)
+                    .buttons(MessageDialogButtons::OkCancelCustom("Open Download Page".into(), "Not Now".into()))
+                    .show(|open| {
+                        if open {
+                            open_url(RELEASES_URL);
+                        }
+                    });
+            }
+            Err(e) => {
+                eprintln!("update check failed: {e}");
+                dialog
+                    .message(format!(
+                        "Payback couldn’t reach GitHub to check for a newer version. Check your internet connection and try again, or look at the releases page yourself. You have version {current}."
+                    ))
+                    .title("Couldn’t check for updates")
+                    .kind(MessageDialogKind::Warning)
+                    .buttons(MessageDialogButtons::OkCancelCustom("Open Releases Page".into(), "OK".into()))
+                    .show(|open| {
+                        if open {
+                            open_url(RELEASES_URL);
+                        }
+                    });
+            }
+        }
+    });
+}
+
 // -- app --------------------------------------------------------------------------
 
 fn show_main(app: &tauri::AppHandle) {
@@ -157,9 +229,9 @@ fn main() {
                     app_menu.insert(&updates, 1)?;
                 }
                 app.set_menu(menu)?;
-                app.on_menu_event(|_app, event| {
+                app.on_menu_event(|app, event| {
                     if event.id() == "check-updates" {
-                        open_url(RELEASES_URL);
+                        check_for_updates(app);
                     }
                 });
             }

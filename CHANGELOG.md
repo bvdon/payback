@@ -2,6 +2,12 @@
 
 What changed in each version of Payback. Downloads are on the [releases page](https://github.com/bvdon/payback/releases).
 
+## 0.1.5 — 2026-10-20
+- **Check for Updates…** on the Mac now actually checks. It compares your version with the newest release on GitHub:
+  - If you're current, it says so ("You're up to date").
+  - If there's a newer version, it tells you which one and offers to open the download page.
+  - If it can't reach GitHub, it says so and offers to open the releases page.
+
 ## 0.1.4 — 2026-10-20
 - **Simple interest:** when you create or edit a loan, choose **No interest** or **Simple interest** and enter the yearly rate, like 5 or 4.25.
   - Interest builds up each day on the amount still owed (rate ÷ 365 per day), never on unpaid interest. Each payment pays the interest built up so far, and the rest lowers the principal.
