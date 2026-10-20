@@ -95,6 +95,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interest::Interest;
     use crate::ledger::LoanInput;
 
     fn temp_dir() -> PathBuf {
@@ -116,6 +117,7 @@ mod tests {
             borrower: "Sam".into(),
             principal_cents: 100,
             start_date: "2026-01-01".into(),
+            interest: Interest::Simple(5_000),
         })
         .unwrap();
         for _ in 0..5 {
@@ -132,6 +134,7 @@ mod tests {
             borrower: "Sam".into(),
             principal_cents: 100,
             start_date: "2026-01-01".into(),
+            interest: Interest::None,
         })
         .unwrap();
         assert_eq!(s.loans().len(), 2);

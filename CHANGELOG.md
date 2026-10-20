@@ -2,6 +2,14 @@
 
 What changed in each version of Payback. Downloads are on the [releases page](https://github.com/bvdon/payback/releases).
 
+## 0.1.4 — 2026-10-20
+- **Simple interest:** when you create or edit a loan, choose **No interest** or **Simple interest** and enter the yearly rate, like 5 or 4.25.
+  - Interest builds up each day on the amount still owed (rate ÷ 365 per day), never on unpaid interest. Each payment pays the interest built up so far, and the rest lowers the principal.
+  - The balance shows what's owed today, principal plus interest, and how much interest is added each day. Each payment shows how much went to interest and how much to principal.
+  - A new **Interest** tab on the loan page lists every stretch between payments: the days, the principal owed, the interest it built up and how the payment was split. It also has totals for interest so far, interest paid and interest owed now.
+  - PDF and CSV statements include the rate, the interest and principal split for each payment, and the interest built up since the last payment.
+- Existing loans stay interest-free. Files without interest still open in older versions of Payback. A shared file with an interest-bearing loan needs 0.1.4 or newer, so older versions refuse it instead of showing the wrong balance.
+
 ## 0.1.3 — 2026-10-19
 - **Linux:** Payback now comes as a `.deb` (Ubuntu, Debian), an `.rpm` (Fedora) and an `.AppImage` (most other distributions). They're built on Ubuntu 22.04, so they run on older systems too.
 - The README and the release notes have install steps for Linux.

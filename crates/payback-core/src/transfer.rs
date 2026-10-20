@@ -6,13 +6,13 @@
 use crate::error::{Error, Result};
 use crate::json::{Json, ToJson};
 use crate::model::{Loan, Payment};
-use crate::store::{parse_loans, Store, EXPORT_FORMAT, FORMAT_VERSION};
+use crate::store::{format_version_for, parse_loans, Store, EXPORT_FORMAT};
 
 /// The contents of a `.payback` file holding `loans`.
 pub fn export_text(loans: &[&Loan], exported_at: i64, app_version: &str) -> String {
     Json::obj()
         .with("format", EXPORT_FORMAT)
-        .with("formatVersion", FORMAT_VERSION)
+        .with("formatVersion", format_version_for(loans.iter().copied()))
         .with("exportedAt", exported_at)
         .with("appVersion", app_version)
         .with("loans", loans.to_json())
@@ -52,7 +52,7 @@ fn same_payment(a: &Payment, b: &Payment) -> bool {
     a.amount_cents == b.amount_cents && a.date == b.date && a.method == b.method && a.note == b.note
 }
 
-fn compare(local: Option<&Loan>, incoming: &Loan) -> LoanChange {
+fn compare(local: Option<&Loan>, incoming: &Loan, today: &str) -> LoanChange {
     let mut c = LoanChange {
         id: incoming.id.clone(),
         name: incoming.name.clone(),
@@ -63,10 +63,10 @@ fn compare(local: Option<&Loan>, incoming: &Loan) -> LoanChange {
         payments_removed: 0,
         payments_edited: 0,
         balance_before_cents: None,
-        balance_after_cents: incoming.balance_cents(),
+        balance_after_cents: incoming.balance_cents(today),
     };
     let Some(local) = local else { return c };
-    c.balance_before_cents = Some(local.balance_cents());
+    c.balance_before_cents = Some(local.balance_cents(today));
     if local.name != incoming.name {
         c.previous_name = Some(local.name.clone());
     }
@@ -74,7 +74,8 @@ fn compare(local: Option<&Loan>, incoming: &Loan) -> LoanChange {
         || local.lender != incoming.lender
         || local.borrower != incoming.borrower
         || local.principal_cents != incoming.principal_cents
-        || local.start_date != incoming.start_date;
+        || local.start_date != incoming.start_date
+        || local.interest != incoming.interest;
     c.payments_added = incoming.payments.iter().filter(|p| local.payment(&p.id).is_err()).count();
     c.payments_removed = local.payments.iter().filter(|p| incoming.payment(&p.id).is_err()).count();
     c.payments_edited =
@@ -84,12 +85,13 @@ fn compare(local: Option<&Loan>, incoming: &Loan) -> LoanChange {
     c
 }
 
-pub fn preview(store: &Store, text: &str) -> Result<Vec<LoanChange>> {
+/// What importing `text` would change, with balances as of `today`.
+pub fn preview(store: &Store, text: &str, today: &str) -> Result<Vec<LoanChange>> {
     let incoming = parse_loans(text)?;
     if incoming.is_empty() {
         return Err(Error::invalid("That file doesn't contain any loans."));
     }
-    Ok(incoming.iter().map(|l| compare(store.loan(&l.id).ok(), l)).collect())
+    Ok(incoming.iter().map(|l| compare(store.loan(&l.id).ok(), l, today)).collect())
 }
 
 /// Import the loans in `text` whose IDs are in `only` (all when `None`).
@@ -104,7 +106,8 @@ pub fn apply(store: &mut Store, text: &str, only: Option<&[String]>) -> Result<(
         }
         match loans.iter_mut().find(|x| x.id == l.id) {
             Some(existing) => {
-                if compare(Some(existing), &l).status != "same" {
+                // Only the status is used here, which doesn't depend on the date.
+                if compare(Some(existing), &l, "").status != "same" {
                     *existing = l;
                     updated += 1;
                 }
@@ -124,8 +127,11 @@ pub fn apply(store: &mut Store, text: &str, only: Option<&[String]>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interest::Interest;
     use crate::ledger::{LoanInput, PaymentInput, PaymentPatch};
     use crate::model::Method;
+
+    const T: &str = "2026-10-19";
 
     fn pay(cents: i64) -> PaymentInput {
         PaymentInput {
@@ -149,6 +155,7 @@ mod tests {
                 borrower: "Sam".into(),
                 principal_cents: 300_000,
                 start_date: "2026-04-01".into(),
+                interest: Interest::None,
             })
             .unwrap();
         let first = older.add_payment(&loan.id, pay(10_000)).unwrap();
@@ -157,14 +164,14 @@ mod tests {
 
         // Younger brother imports: the loan is new to him.
         let mut younger = Store::in_memory();
-        let p = preview(&younger, &file).unwrap();
+        let p = preview(&younger, &file, T).unwrap();
         assert_eq!(p[0].status, "new");
         assert_eq!(p[0].payments_added, 2);
         assert_eq!(apply(&mut younger, &file, None).unwrap(), (1, 0));
-        assert_eq!(younger.loan(&loan.id).unwrap().balance_cents(), 270_000);
+        assert_eq!(younger.loan(&loan.id).unwrap().balance_cents(T), 270_000);
 
         // Importing the same file again changes nothing.
-        assert_eq!(preview(&younger, &file).unwrap()[0].status, "same");
+        assert_eq!(preview(&younger, &file, T).unwrap()[0].status, "same");
         assert_eq!(apply(&mut younger, &file, None).unwrap(), (0, 0));
 
         // Older brother edits one payment, deletes nothing, adds one; younger
@@ -175,7 +182,7 @@ mod tests {
         older.add_payment(&loan.id, pay(5_000)).unwrap();
         younger.add_payment(&loan.id, pay(1_000)).unwrap();
         let file2 = export_text(&[older.loan(&loan.id).unwrap()], 2, "0.1.0");
-        let c = &preview(&younger, &file2).unwrap()[0];
+        let c = &preview(&younger, &file2, T).unwrap()[0];
         assert_eq!(c.status, "update");
         assert_eq!((c.payments_added, c.payments_removed, c.payments_edited), (1, 1, 1));
         assert_eq!(c.balance_before_cents, Some(269_000));
@@ -194,6 +201,7 @@ mod tests {
                 borrower: "Sam".into(),
                 principal_cents: 100,
                 start_date: "2026-01-01".into(),
+                interest: Interest::None,
             })
             .unwrap();
         let l2 = a
@@ -203,13 +211,14 @@ mod tests {
                 borrower: "Sam".into(),
                 principal_cents: 200,
                 start_date: "2026-01-01".into(),
+                interest: Interest::None,
             })
             .unwrap();
         let file = export_text(&a.loans().iter().collect::<Vec<_>>(), 1, "0.1.0");
         let mut b = Store::in_memory();
         assert_eq!(apply(&mut b, &file, Some(std::slice::from_ref(&l2.id))).unwrap(), (1, 0));
         assert!(b.loan(&l1.id).is_err());
-        assert!(preview(&b, "hello").is_err());
-        assert!(preview(&b, r#"{"format":"payback-export","formatVersion":1,"loans":[]}"#).is_err());
+        assert!(preview(&b, "hello", T).is_err());
+        assert!(preview(&b, r#"{"format":"payback-export","formatVersion":1,"loans":[]}"#, T).is_err());
     }
 }

@@ -1,9 +1,10 @@
 # Payback
 
-A small desktop app for tracking simple, interest-free personal loans, for Mac, Windows and Linux.
+A small desktop app for tracking simple personal loans, interest-free or with simple interest, for Mac, Windows and Linux.
 
 ## What it does
 - Keeps any number of loans, each with a name, the amount lent and a start date.
+- **Interest (optional):** a loan can be interest-free or charge simple interest at a yearly rate. Interest builds up daily on the amount still owed, never on unpaid interest, and each payment pays the interest first. An Interest tab shows how much has built up between payments.
 - Records payments with an amount, a date, a type (Check, PayPal, Venmo, Cash or Other) and an optional note.
 - Shows the balance remaining, recalculated after every payment, and a running balance on each payment.
 - Edits and deletes payments, with undo.

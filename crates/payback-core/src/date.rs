@@ -46,6 +46,19 @@ pub fn display(s: &str) -> String {
     }
 }
 
+/// Days since 1970-01-01 for a valid date, for counting days between dates.
+pub fn day_number(s: &str) -> Option<i64> {
+    let (y, m, d) = parts(s)?;
+    // Howard Hinnant's days_from_civil.
+    let y = if m <= 2 { y as i64 - 1 } else { y as i64 };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m as i64 + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era * 146_097 + doe - 719_468)
+}
+
 /// The UTC calendar date and time for a Unix timestamp, as
 /// (year, month, day, hour, minute, second). Used only for file names.
 pub fn utc_parts(ts: i64) -> (i64, u32, u32, u32, u32, u32) {
@@ -90,5 +103,8 @@ mod tests {
         // 2026-10-19T20:15:30Z
         assert_eq!(utc_parts(1_792_440_930), (2026, 10, 19, 20, 15, 30));
         assert_eq!(utc_parts(951_782_400), (2000, 2, 29, 0, 0, 0));
+        assert_eq!(day_number("1970-01-01"), Some(0));
+        assert_eq!(day_number("2000-02-29"), Some(951_782_400 / 86_400));
+        assert_eq!(day_number("2026-13-01"), None);
     }
 }

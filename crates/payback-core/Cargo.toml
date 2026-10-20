@@ -1,6 +1,6 @@
 [package]
 name = "payback-core"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 license = "MIT"
 description = "Core logic for Payback, a local-first loan tracker. No third-party crates; runs on macOS and Windows."

@@ -53,4 +53,9 @@ export function todayIso(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** A rate in thousandths of a percent as an editable number: 5250 -> "5.25". */
+export function rateInput(rate: number): string {
+  return rate > 0 ? String(rate / 1000) : '';
+}
+
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

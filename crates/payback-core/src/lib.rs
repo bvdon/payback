@@ -8,6 +8,7 @@ pub mod csv;
 pub mod date;
 pub mod error;
 pub mod id;
+pub mod interest;
 pub mod json;
 pub mod ledger;
 pub mod model;

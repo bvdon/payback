@@ -6,12 +6,17 @@
 use crate::date;
 use crate::error::{Error, Result};
 use crate::json::{Json, ToJson};
+use crate::interest::Interest;
 use crate::model::Loan;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Bump when the file's shape changes, and keep reading older versions.
-pub const FORMAT_VERSION: i64 = 1;
+/// Version 2 added interest. Files with no interest-bearing loans are still
+/// written as version 1 so that Payback 0.1.3 and older can open them; a
+/// file with interest is version 2, which those versions refuse rather than
+/// showing the wrong balance.
+pub const FORMAT_VERSION: i64 = 2;
 pub const DATA_FORMAT: &str = "payback-data";
 pub const EXPORT_FORMAT: &str = "payback-export";
 const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -77,8 +82,20 @@ pub fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// The oldest format version that can hold `loans`.
+pub fn format_version_for<'a>(loans: impl IntoIterator<Item = &'a Loan>) -> i64 {
+    if loans.into_iter().any(|l| l.interest != Interest::None) {
+        2
+    } else {
+        1
+    }
+}
+
 pub fn data_file_json(loans: &[Loan]) -> Json {
-    Json::obj().with("format", DATA_FORMAT).with("formatVersion", FORMAT_VERSION).with("loans", loans.to_json())
+    Json::obj()
+        .with("format", DATA_FORMAT)
+        .with("formatVersion", format_version_for(loans))
+        .with("loans", loans.to_json())
 }
 
 impl Store {

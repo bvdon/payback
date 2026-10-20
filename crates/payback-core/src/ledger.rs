@@ -4,6 +4,7 @@
 use crate::date;
 use crate::error::{Error, Result};
 use crate::id;
+use crate::interest::Interest;
 use crate::model::{clean_name, clean_note, clean_person, Loan, Method, Payment};
 use crate::money::MAX_CENTS;
 use crate::store::Store;
@@ -14,6 +15,7 @@ pub struct LoanInput {
     pub borrower: String,
     pub principal_cents: i64,
     pub start_date: String,
+    pub interest: Interest,
 }
 
 #[derive(Default)]
@@ -23,6 +25,7 @@ pub struct LoanPatch {
     pub borrower: Option<String>,
     pub principal_cents: Option<i64>,
     pub start_date: Option<String>,
+    pub interest: Option<Interest>,
 }
 
 pub struct PaymentInput {
@@ -63,6 +66,7 @@ impl Store {
             borrower: clean_person(&input.borrower, "borrower")?,
             principal_cents: check_cents(input.principal_cents, "loan amount")?,
             start_date: date::validate(&input.start_date, "start date")?,
+            interest: input.interest,
             created_at: now,
             updated_at: now,
             payments: Vec::new(),
@@ -94,6 +98,9 @@ impl Store {
             }
             if let Some(s) = start {
                 l.start_date = s;
+            }
+            if let Some(i) = patch.interest {
+                l.interest = i;
             }
             Ok(())
         })?;
@@ -206,6 +213,7 @@ mod tests {
                 borrower: "Sam".into(),
                 principal_cents: 500_000,
                 start_date: "2026-01-15".into(),
+                interest: Interest::None,
             })
             .unwrap();
         assert_eq!(l.name, "Car");
@@ -219,18 +227,19 @@ mod tests {
             borrower: " ".into(),
             principal_cents: 100,
             start_date: "2026-01-01".into(),
+            interest: Interest::None,
         });
         assert_eq!(missing.unwrap_err().to_string(), "Enter who borrowed the money.");
         let p = s.add_payment(&l.id, pay(20_000, "2026-02-01")).unwrap();
         assert_eq!(p.note, "birthday");
         s.add_payment(&l.id, pay(30_000, "2026-03-01")).unwrap();
-        assert_eq!(s.loan(&l.id).unwrap().balance_cents(), 450_000);
+        assert_eq!(s.loan(&l.id).unwrap().balance_cents("2026-10-19"), 450_000);
 
         s.update_payment(&l.id, &p.id, PaymentPatch { amount_cents: Some(25_000), ..Default::default() }).unwrap();
-        assert_eq!(s.loan(&l.id).unwrap().balance_cents(), 445_000);
+        assert_eq!(s.loan(&l.id).unwrap().balance_cents("2026-10-19"), 445_000);
 
         let removed = s.delete_payment(&l.id, &p.id).unwrap();
-        assert_eq!(s.loan(&l.id).unwrap().balance_cents(), 470_000);
+        assert_eq!(s.loan(&l.id).unwrap().balance_cents("2026-10-19"), 470_000);
         // Undo puts back the same payment.
         s.add_payment(
             &l.id,
@@ -249,7 +258,7 @@ mod tests {
         assert!(matches!(dup, Err(Error::Conflict(_))));
 
         s.update_loan(&l.id, LoanPatch { principal_cents: Some(600_000), ..Default::default() }).unwrap();
-        assert_eq!(s.loan(&l.id).unwrap().balance_cents(), 545_000);
+        assert_eq!(s.loan(&l.id).unwrap().balance_cents("2026-10-19"), 545_000);
         s.delete_loan(&l.id).unwrap();
         assert!(s.loans().is_empty());
     }
@@ -264,10 +273,11 @@ mod tests {
                 borrower: "Sam".into(),
                 principal_cents: 1_000,
                 start_date: "2026-01-01".into(),
+                interest: Interest::None,
             })
             .unwrap();
         s.add_payment(&l.id, pay(1_500, "2026-01-02")).unwrap();
-        assert_eq!(s.loan(&l.id).unwrap().balance_cents(), -500);
+        assert_eq!(s.loan(&l.id).unwrap().balance_cents("2026-10-19"), -500);
 
         let before = s.loans().to_vec();
         assert!(s.add_payment(&l.id, pay(0, "2026-01-02")).is_err());

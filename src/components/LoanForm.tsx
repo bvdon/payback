@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/api';
-import type { Loan } from '../api/types';
-import { amountInput, plural, todayIso } from '../lib/format';
+import type { InterestKind, Loan } from '../api/types';
+import { amountInput, plural, rateInput, todayIso } from '../lib/format';
 import { useStore } from '../state';
 import { Modal } from './ui';
 
@@ -16,13 +16,15 @@ export function LoanForm({ loan, onClose, onSaved }: { loan?: Loan; onClose: () 
   const people = [...new Set(data.loans.flatMap((l) => [l.lender, l.borrower]).filter(Boolean))].sort();
   const [amount, setAmount] = useState(loan ? amountInput(loan.principalCents) : '');
   const [startDate, setStartDate] = useState(loan?.startDate ?? todayIso());
+  const [interest, setInterest] = useState<InterestKind>(loan?.interest ?? 'none');
+  const [rate, setRate] = useState(loan ? rateInput(loan.interestRate) : '');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    const fields = { name, lender, borrower, amount, startDate };
+    const fields = { name, lender, borrower, amount, startDate, interest, rate };
     const saved = await act(
       () => (loan ? api.updateLoan(loan.id, fields) : api.createLoan(fields)),
       loan ? 'Loan updated' : undefined,
@@ -91,6 +93,33 @@ export function LoanForm({ loan, onClose, onSaved }: { loan?: Loan; onClose: () 
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </label>
         </div>
+        <div className="field-row">
+          <label className="field">
+            <span>Interest</span>
+            <select value={interest} onChange={(e) => setInterest(e.target.value as InterestKind)}>
+              <option value="none">No interest</option>
+              <option value="simple">Simple interest</option>
+            </select>
+          </label>
+          {interest === 'simple' ? (
+            <label className="field">
+              <span>Yearly rate</span>
+              <div className="money-input rate-input">
+                <input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="e.g. 5" />
+                <span>% a year</span>
+              </div>
+            </label>
+          ) : (
+            <span className="field" />
+          )}
+        </div>
+        {interest === 'simple' && (
+          <p className="muted small form-note">
+            Interest builds up each day on the amount still owed, never on unpaid interest. Each payment pays the interest
+            first, and the rest lowers what’s owed.
+            {loan && loan.interest !== 'simple' && loan.paymentCount > 0 && ' Past payments will be recalculated from the start date.'}
+          </p>
+        )}
       </form>
       {loan && confirmDelete && (
         <div className="danger-box">

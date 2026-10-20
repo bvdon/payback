@@ -4,6 +4,7 @@
 use crate::date;
 use crate::error::{Error, Result};
 use crate::id;
+use crate::interest::{self, Interest};
 use crate::json::{Args, Json, ToJson};
 
 pub const MAX_NAME: usize = 100;
@@ -88,22 +89,29 @@ pub struct Loan {
     pub borrower: String,
     pub principal_cents: i64,
     pub start_date: String,
+    /// None for loans made before 0.1.4.
+    pub interest: Interest,
     pub created_at: i64,
     pub updated_at: i64,
     pub payments: Vec<Payment>,
 }
 
-crate::impl_to_json!(Loan {
-    id => "id",
-    name => "name",
-    lender => "lender",
-    borrower => "borrower",
-    principal_cents => "principalCents",
-    start_date => "startDate",
-    created_at => "createdAt",
-    updated_at => "updatedAt",
-    payments => "payments",
-});
+impl ToJson for Loan {
+    fn to_json(&self) -> Json {
+        Json::obj()
+            .with("id", &self.id)
+            .with("name", &self.name)
+            .with("lender", &self.lender)
+            .with("borrower", &self.borrower)
+            .with("principalCents", self.principal_cents)
+            .with("startDate", &self.start_date)
+            .with("interest", self.interest.key())
+            .with("interestRate", self.interest.rate())
+            .with("createdAt", self.created_at)
+            .with("updatedAt", self.updated_at)
+            .with("payments", &self.payments)
+    }
+}
 
 pub fn clean_name(s: &str) -> Result<String> {
     let s = s.trim();
@@ -203,6 +211,8 @@ impl Loan {
             borrower: stored_person(a, "borrower")?,
             principal_cents: stored_cents(a, "principalCents", "loan")?,
             start_date,
+            interest: Interest::from_parts(a.opt_str("interest")?.unwrap_or(""), a.opt_i64("interestRate")?.unwrap_or(0))
+                .map_err(|_| Error::invalid("A loan in the file has an invalid interest rate."))?,
             created_at: a.opt_i64("createdAt")?.unwrap_or(0),
             updated_at: a.opt_i64("updatedAt")?.unwrap_or(0),
             payments,
@@ -213,9 +223,14 @@ impl Loan {
         self.payments.iter().map(|p| p.amount_cents).sum()
     }
 
-    /// Principal minus payments. Negative means overpaid.
-    pub fn balance_cents(&self) -> i64 {
-        self.principal_cents - self.paid_cents()
+    /// What's owed on `today`: principal minus payments, plus any interest
+    /// built up. Negative means overpaid.
+    pub fn balance_cents(&self, today: &str) -> i64 {
+        self.schedule(today).balance()
+    }
+
+    pub fn schedule(&self, today: &str) -> interest::Schedule<'_> {
+        interest::schedule(self, today)
     }
 
     /// Payments oldest first: by date, then by when they were entered.
@@ -225,33 +240,46 @@ impl Loan {
         v
     }
 
-    /// Payments oldest first, each with the balance left after it.
-    pub fn ledger(&self) -> Vec<(&Payment, i64)> {
-        let mut balance = self.principal_cents;
-        self.payments_in_order()
-            .into_iter()
-            .map(|p| {
-                balance -= p.amount_cents;
-                (p, balance)
-            })
-            .collect()
-    }
-
     pub fn payment(&self, id: &str) -> Result<&Payment> {
         self.payments.iter().find(|p| p.id == id).ok_or_else(|| Error::not_found("That payment no longer exists."))
     }
 
-    /// The loan as the UI sees it: stored fields plus computed totals, with
-    /// payments newest first and a running balance on each.
-    pub fn view(&self) -> Json {
-        let ledger = self.ledger();
-        let last = ledger.last().map(|(p, _)| p.date.clone());
-        let payments: Vec<Json> =
-            ledger.iter().rev().map(|(p, bal)| p.to_json().with("balanceAfterCents", *bal)).collect();
+    /// The loan as the UI sees it on `today`: stored fields plus computed
+    /// totals, with payments newest first and how each one was applied.
+    pub fn view(&self, today: &str) -> Json {
+        let s = self.schedule(today);
+        let last = s.rows.last().map(|r| r.payment.date.clone());
+        let payments: Vec<Json> = s
+            .rows
+            .iter()
+            .rev()
+            .map(|r| {
+                r.payment
+                    .to_json()
+                    .with("balanceAfterCents", r.balance_after)
+                    .with("fromDate", &r.from)
+                    .with("days", r.days)
+                    .with("principalBeforeCents", r.principal_before)
+                    .with("interestAccruedCents", r.accrued)
+                    .with("toInterestCents", r.to_interest)
+                    .with("toPrincipalCents", r.to_principal)
+                    .with("interestOwedAfterCents", r.interest_owed_after)
+            })
+            .collect();
         let mut v = self.to_json();
         v.set("payments", Json::Arr(payments));
-        v.with("paidCents", self.paid_cents())
-            .with("balanceCents", self.balance_cents())
+        v.with("rateLabel", interest::format_rate(self.interest.rate()))
+            .with("paidCents", self.paid_cents())
+            .with("balanceCents", s.balance())
+            .with("principalOwedCents", s.principal)
+            .with("interestOwedCents", s.interest_owed)
+            .with("interestTotalCents", s.interest_total)
+            .with("interestPaidCents", s.interest_paid)
+            .with("dailyInterestCents", s.daily)
+            .with("sinceDate", &s.since)
+            .with("daysSince", s.days_since)
+            .with("accruedSinceCents", s.accrued_since)
+            .with("asOf", &s.as_of)
             .with("paymentCount", self.payments.len())
             .with("lastPaymentDate", last)
     }
@@ -281,6 +309,7 @@ pub(crate) mod tests {
             borrower: "Sam".into(),
             principal_cents: 100_000,
             start_date: "2026-01-01".into(),
+            interest: Interest::None,
             created_at: 1,
             updated_at: 1,
             payments,
@@ -294,11 +323,12 @@ pub(crate) mod tests {
             payment("a", 25_000, "2026-02-01", 9),
             payment("b", 5_000, "2026-03-01", 2),
         ]);
-        let ledger: Vec<(&str, i64)> = l.ledger().iter().map(|(p, b)| (p.id.as_str(), *b)).collect();
+        let s = l.schedule("2026-10-19");
+        let ledger: Vec<(&str, i64)> = s.rows.iter().map(|r| (r.payment.id.as_str(), r.balance_after)).collect();
         assert_eq!(ledger, vec![("a", 75_000), ("b", 70_000), ("c", 60_000)]);
         assert_eq!(l.paid_cents(), 40_000);
-        assert_eq!(l.balance_cents(), 60_000);
-        let v = l.view();
+        assert_eq!(l.balance_cents("2026-10-19"), 60_000);
+        let v = l.view("2026-10-19");
         let ps = v.get("payments").unwrap().as_array().unwrap();
         assert_eq!(ps[0].get("id").unwrap().as_str(), Some("c"));
         assert_eq!(ps[0].get("balanceAfterCents").unwrap().as_i64(), Some(60_000));
@@ -323,6 +353,13 @@ pub(crate) mod tests {
         }
         let old = Loan::from_json(&old).unwrap();
         assert_eq!((old.lender.as_str(), old.borrower.as_str()), ("", ""));
+        assert_eq!(old.interest, Interest::None);
+        let mut simple = l.clone();
+        simple.interest = Interest::Simple(4_125);
+        assert_eq!(Loan::from_json(&simple.to_json()).unwrap(), simple);
+        let mut bad_rate = simple.to_json();
+        bad_rate.set("interestRate", Json::Int(0));
+        assert!(Loan::from_json(&bad_rate).is_err());
         assert_eq!(Method::parse("PAYPAL").unwrap(), Method::PayPal);
         assert!(Method::parse("bitcoin").is_err());
     }

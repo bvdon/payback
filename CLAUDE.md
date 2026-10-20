@@ -1,21 +1,22 @@
 # Payback — project context
 
 ## What it is
-Payback is a small desktop app for tracking simple, interest-free personal loans. It's local-first: no accounts, no cloud, no subscriptions. Each person keeps their own copy of the data on their own computer.
+Payback is a small desktop app for tracking simple personal loans, either interest-free or with simple interest (from 0.1.4). It's local-first: no accounts, no cloud, no subscriptions. Each person keeps their own copy of the data on their own computer.
 
 It's built the same way as Stint, a sibling time-tracker project: Tauri 2, a Rust core, and a React + TypeScript UI bundled with esbuild. When in doubt, follow Stint's conventions.
 
 **Targets:** macOS (`.dmg`, universal Intel + Apple Silicon), Windows (`.msi` / NSIS `.exe` installer) and, from 0.1.3, Linux (`.deb`, `.rpm`, `.AppImage`, built only by GitHub Actions).
 
 ## Status
-v0.1.3 built on 2026-10-19 (0.1.1 added lender and borrower, 0.1.2 added the Mac "Check for Updates…" menu item, 0.1.3 added Linux builds). All v1 features below work:
-- 26 core tests pass.
+v0.1.4 built on 2026-10-20 (0.1.1 added lender and borrower, 0.1.2 added the Mac "Check for Updates…" menu item, 0.1.3 added Linux builds, 0.1.4 added simple interest). All features below work:
+- 31 core tests pass.
+- Simple interest (0.1.4) was checked in headless Chrome against the dev server, light and dark mode, plus the PDF and CSV.
 - The UI was checked in a browser against the dev server, in light and dark mode.
 - The PDF statement was checked visually.
-- The universal Mac DMG builds and launches (`releases/Payback-0.1.3.dmg`).
-- The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.3-windows-setup.exe`).
+- The universal Mac DMG builds and launches (`releases/Payback-0.1.4.dmg`).
+- The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.4-windows-setup.exe`).
 
-- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. Releases v0.1.1–v0.1.3 are built by Actions and published. From v0.1.3 each one has `.dmg`, `-setup.exe`, `.msi`, `.deb`, `.rpm` and `.AppImage`, and `/releases/latest` points to v0.1.3. The Linux build passed on its first run.
+- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. Releases v0.1.1–v0.1.4 are built by Actions and published. From v0.1.3 each one has `.dmg`, `-setup.exe`, `.msi`, `.deb`, `.rpm` and `.AppImage`, and `/releases/latest` points to v0.1.4. The Linux build passed on its first run.
 
 **Not done yet:**
 - No installer has been run on a real Windows PC or Linux desktop.
@@ -35,7 +36,13 @@ v0.1.3 built on 2026-10-19 (0.1.1 added lender and borrower, 0.1.2 added the Mac
   - payment type (required, a dropdown with `Check`, `PayPal`, `Venmo`, `Cash`, `Other`)
   - note (optional, free text)
 - **Edit and delete payments.** The balance recalculates. Deleting asks for confirmation or offers undo.
-- **Balance remaining = principal − sum of payments.** It is always computed and never stored, so it can't drift. Payments are listed newest first, with a running balance per row. A payment that would go below zero gets a warning, but is allowed, and the balance shows as "overpaid by $X".
+- **Interest** (added in 0.1.4). Each loan is `none` or `simple`, with a yearly rate stored as thousandths of a percent (`interestRate`, 5.25% = 5250, max 100%). The math is in `interest.rs` (`schedule`):
+  - Interest accrues actual/365 on the principal still owed, rounded to the cent once per stretch between payments. It never compounds.
+  - "US Rule": a payment first pays the accrued interest and the rest goes to principal. Unpaid interest is carried forward, not added to principal.
+  - The balance is as of **today**, which the UI sends (`today`) on `app.bootstrap`, `loans.create|update` and `import.preview`. If the last payment is later than today, it's as of that payment.
+  - The UI shows "Balance today" (principal + interest), the interest/principal split under each payment, an "Interest so far" row, and an **Interest** tab with stats and a table of each stretch between payments.
+  - Interest-free loans run through the same schedule with rate 0, so their numbers are unchanged.
+- **Balance remaining = principal − sum of payments** (plus interest for interest loans). It is always computed and never stored, so it can't drift. Payments are listed newest first, with a running balance per row. A payment that would go below zero gets a warning, but is allowed, and the balance shows as "overpaid by $X".
 - **Export statement.** A readable statement of a loan (name, principal, start date, every payment, totals, balance) as PDF and CSV, to share or print.
 - **Export/import data file (sharing between two people).** One person exports a loan as a `.payback` file (JSON) and the other imports it.
   - Every loan and payment gets a permanent random ID when it's created. Importing a loan whose ID already exists **replaces** the local copy, after a confirmation that shows what changes (payments added, removed or edited, and the balance before and after). A loan with an unknown ID gets added.
@@ -43,7 +50,7 @@ v0.1.3 built on 2026-10-19 (0.1.1 added lender and borrower, 0.1.2 added the Mac
 - **Backups.** An automatic daily snapshot of the data file (keep 14), plus back up now and restore. Restore validates the file and saves a safety copy first.
 - Light and dark mode.
 
-Not in v1: interest, payment schedules or due dates, adding money to the principal later, sync between computers, multiple currencies (USD only).
+Not in v1: compound interest, payment schedules or due dates, adding money to the principal later, sync between computers, multiple currencies (USD only).
 
 ## Architecture
 ```
@@ -59,6 +66,7 @@ src/                      React 19 + TypeScript UI, bundled with esbuild (script
 - `model.rs`: `Loan`, `Payment`, `Method`, JSON in/out with validation. `Loan::view()` is the UI shape: payments newest first plus `balanceAfterCents`, `paidCents`, `balanceCents`.
 - `store.rs`: `Store`, which loads and atomically saves `payback.json`, and `parse_loans`, which reads data files and `.payback` export files.
 - `ledger.rs`: create, update and delete loans and payments. Each one works on a copy, so a rejected change touches nothing.
+- `interest.rs`: `Interest` (None / Simple(rate)), rate parsing and formatting, and `schedule(loan, today)`, which applies payments and gives the totals. `Loan::balance_cents(today)` and `Loan::view(today)` use it.
 - `transfer.rs`: `.payback` export, plus import `preview` and `apply`, matched by ID.
 - `statement.rs`: the PDF and CSV statements. `backup.rs`: daily auto-backup (keeps 14), backup now, restore.
 - `money.rs` parses typed amounts ("$1,234.50") to cents. `date.rs` validates YYYY-MM-DD.
@@ -131,4 +139,5 @@ npm run release      # scripts/release.sh: test, bump version, build both instal
 - Keep `payback-core` std-only and cross-platform. Don't use OS-specific code in the core.
 - Once a version has shipped, any change to the data file shape needs a `format_version` bump and a migration path for older files.
   - The exception is a new **optional** field that reads as blank when missing, like `lender` and `borrower` in 0.1.1. Older app versions ignore unknown keys, so it doesn't need a bump.
+  - **Format version 2** (0.1.4) adds `interest` and `interestRate`. Data files and exports are written as version **1** when no loan has interest, so 0.1.3 can still open them, and as **2** when any loan has interest, so older versions refuse them instead of showing a wrong interest-free balance (`store::format_version_for`). Version 1 files read as interest-free.
 - Requires macOS 12+, Windows 10+, or a Linux with WebKitGTK 4.1 (Ubuntu 22.04+, Fedora 36+ or similar).

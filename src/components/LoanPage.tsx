@@ -9,6 +9,8 @@ import { Icon, Menu } from './ui';
 export function LoanPage({ loan, onEdit }: { loan: Loan; onEdit: () => void }) {
   const { toast } = useStore();
   const [editing, setEditing] = useState<string | null>(null);
+  const [tab, setTab] = useState<'payments' | 'interest'>('payments');
+  const hasInterest = loan.interest === 'simple';
 
   const exportWith = async (fn: () => Promise<string | null>, what: string) => {
     try {
@@ -19,7 +21,9 @@ export function LoanPage({ loan, onEdit }: { loan: Loan; onEdit: () => void }) {
     }
   };
 
-  const paidPct = Math.min(100, Math.round((loan.paidCents / loan.principalCents) * 100));
+  // With interest the total to repay grows, so measure against paid + still owed.
+  const owedTotal = loan.paidCents + Math.max(loan.balanceCents, 0);
+  const paidPct = Math.min(100, Math.round((loan.paidCents / owedTotal) * 100));
   const over = loan.balanceCents < 0;
   const done = loan.balanceCents === 0;
 
@@ -33,10 +37,12 @@ export function LoanPage({ loan, onEdit }: { loan: Loan; onEdit: () => void }) {
               <>
                 <strong className="person">{loan.lender}</strong> lent <strong className="person">{loan.borrower}</strong>{' '}
                 {money(loan.principalCents)} on {formatDate(loan.startDate)}
+                {hasInterest && <> at {loan.rateLabel} simple interest</>}
               </>
             ) : (
               <>
-                {money(loan.principalCents)} lent on {formatDate(loan.startDate)} ·{' '}
+                {money(loan.principalCents)} lent on {formatDate(loan.startDate)}
+                {hasInterest && <> at {loan.rateLabel} simple interest</>} ·{' '}
                 <button className="link" onClick={onEdit}>
                   Add who lent and who borrowed
                 </button>
@@ -67,7 +73,7 @@ export function LoanPage({ loan, onEdit }: { loan: Loan; onEdit: () => void }) {
 
       <section className="summary">
         <div className="balance">
-          <span className="label">{over ? 'Overpaid by' : 'Balance remaining'}</span>
+          <span className="label">{over ? 'Overpaid by' : hasInterest ? 'Balance today' : 'Balance remaining'}</span>
           <span className={`big ${over ? 'is-over' : done ? 'is-done' : ''}`}>
             {done ? 'Paid off' : money(Math.abs(loan.balanceCents))}
           </span>
@@ -76,9 +82,24 @@ export function LoanPage({ loan, onEdit }: { loan: Loan; onEdit: () => void }) {
           <div className={`progress-fill ${over ? 'is-over' : ''}`} style={{ width: `${paidPct}%` }} />
         </div>
         <div className="figures">
-          <span>
-            <strong>{money(loan.paidCents)}</strong> paid of {money(loan.principalCents)}
-          </span>
+          {hasInterest ? (
+            <>
+              {loan.balanceCents > 0 && (
+                <span>
+                  <strong>{money(loan.principalOwedCents)}</strong> principal + <strong>{money(loan.interestOwedCents)}</strong>{' '}
+                  interest
+                </span>
+              )}
+              <span>
+                <strong>{money(loan.paidCents)}</strong> paid
+              </span>
+              {loan.dailyInterestCents > 0 && <span>About {money(loan.dailyInterestCents)} interest a day</span>}
+            </>
+          ) : (
+            <span>
+              <strong>{money(loan.paidCents)}</strong> paid of {money(loan.principalCents)}
+            </span>
+          )}
           <span>{plural(loan.paymentCount, 'payment')}</span>
           {loan.lastPaymentDate && <span>Last payment {formatDate(loan.lastPaymentDate)}</span>}
         </div>
@@ -90,8 +111,21 @@ export function LoanPage({ loan, onEdit }: { loan: Loan; onEdit: () => void }) {
       </section>
 
       <section className="card">
-        <h2>Payments</h2>
-        {loan.payments.length === 0 ? (
+        {hasInterest ? (
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'payments'} className={tab === 'payments' ? 'is-active' : ''} onClick={() => setTab('payments')}>
+              Payments
+            </button>
+            <button role="tab" aria-selected={tab === 'interest'} className={tab === 'interest' ? 'is-active' : ''} onClick={() => setTab('interest')}>
+              Interest
+            </button>
+          </div>
+        ) : (
+          <h2>Payments</h2>
+        )}
+        {hasInterest && tab === 'interest' ? (
+          <InterestDetails loan={loan} />
+        ) : loan.payments.length === 0 ? (
           <p className="muted empty-row">No payments yet. Recorded payments show up here, newest first.</p>
         ) : (
           <table className="ledger">
@@ -106,6 +140,20 @@ export function LoanPage({ loan, onEdit }: { loan: Loan; onEdit: () => void }) {
               </tr>
             </thead>
             <tbody>
+              {hasInterest && loan.accruedSinceCents > 0 && (
+                <tr className="accruing">
+                  <td>{formatDate(loan.asOf)}</td>
+                  <td>
+                    <span className="pill pill-interest">Interest</span>
+                  </td>
+                  <td className="note muted">
+                    So far: {plural(loan.daysSince, 'day')} since {formatDate(loan.sinceDate)}
+                  </td>
+                  <td className="num">+{money(loan.accruedSinceCents)}</td>
+                  <td className="num strong">{money(loan.balanceCents)}</td>
+                  <td />
+                </tr>
+              )}
               {loan.payments.map((p) =>
                 editing === p.id ? (
                   <tr key={p.id} className="editing">
@@ -133,6 +181,98 @@ export function LoanPage({ loan, onEdit }: { loan: Loan; onEdit: () => void }) {
   );
 }
 
+/** How the interest built up, stretch by stretch between payments. */
+function InterestDetails({ loan }: { loan: Loan }) {
+  const rows = [...loan.payments].reverse();
+  const principalPaid = loan.paidCents - loan.interestPaidCents;
+  const over = loan.balanceCents < 0;
+  return (
+    <>
+      <div className="stats">
+        <div>
+          <span className="label">Interest so far</span>
+          <strong>{money(loan.interestTotalCents)}</strong>
+        </div>
+        <div>
+          <span className="label">Interest paid</span>
+          <strong>{money(loan.interestPaidCents)}</strong>
+        </div>
+        <div>
+          <span className="label">Interest owed now</span>
+          <strong className="is-money">{money(loan.interestOwedCents)}</strong>
+        </div>
+        <div>
+          <span className="label">Builds up per day</span>
+          <strong>{loan.dailyInterestCents > 0 ? `≈ ${money(loan.dailyInterestCents)}` : '—'}</strong>
+        </div>
+      </div>
+      <p className="muted small explain">
+        {loan.rateLabel} a year, simple interest: each day adds {loan.rateLabel} ÷ 365 of the principal still owed, never
+        interest on interest. A payment pays the interest built up so far, and the rest lowers the principal.
+        {over && ' The loan is overpaid, so no more interest builds up.'}
+      </p>
+      <table className="ledger interest-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th className="num">Days</th>
+            <th className="num">Principal</th>
+            <th className="num">Interest</th>
+            <th className="num">To interest</th>
+            <th className="num">To principal</th>
+            <th className="num">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p) => (
+            <tr key={p.id}>
+              <td>
+                {formatDate(p.fromDate)} – {formatDate(p.date)}
+                <span className="split">
+                  {money(p.amountCents)} payment{p.interestOwedAfterCents > 0 && `, ${money(p.interestOwedAfterCents)} interest left unpaid`}
+                </span>
+              </td>
+              <td className="num">{p.days}</td>
+              <td className="num">{money(Math.max(p.principalBeforeCents, 0))}</td>
+              <td className="num">{money(p.interestAccruedCents)}</td>
+              <td className="num">{money(p.toInterestCents)}</td>
+              <td className="num">{money(p.toPrincipalCents)}</td>
+              <td className={`num strong ${p.balanceAfterCents < 0 ? 'is-over' : ''}`}>
+                {p.balanceAfterCents < 0 ? `${money(-p.balanceAfterCents)} over` : money(p.balanceAfterCents)}
+              </td>
+            </tr>
+          ))}
+          {loan.daysSince > 0 && (
+            <tr className="accruing">
+              <td>
+                {formatDate(loan.sinceDate)} – {formatDate(loan.asOf)}
+                <span className="split">So far, not yet paid</span>
+              </td>
+              <td className="num">{loan.daysSince}</td>
+              <td className="num">{money(Math.max(loan.principalOwedCents, 0))}</td>
+              <td className="num">{money(loan.accruedSinceCents)}</td>
+              <td className="num">—</td>
+              <td className="num">—</td>
+              <td className={`num strong ${over ? 'is-over' : ''}`}>
+                {over ? `${money(-loan.balanceCents)} over` : money(loan.balanceCents)}
+              </td>
+            </tr>
+          )}
+          <tr className="opening">
+            <td>Total</td>
+            <td />
+            <td />
+            <td className="num strong">{money(loan.interestTotalCents)}</td>
+            <td className="num strong">{money(loan.interestPaidCents)}</td>
+            <td className="num strong">{money(principalPaid)}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
+    </>
+  );
+}
+
 function PaymentRow({ loan, p, onEdit }: { loan: Loan; p: LedgerPayment; onEdit: () => void }) {
   const { act, toast } = useStore();
   const remove = async () => {
@@ -151,7 +291,18 @@ function PaymentRow({ loan, p, onEdit }: { loan: Loan; p: LedgerPayment; onEdit:
         <span className={`pill pill-${p.method}`}>{methodLabel(p.method)}</span>
       </td>
       <td className="note">{p.note}</td>
-      <td className="num">−{money(p.amountCents)}</td>
+      <td className="num">
+        −{money(p.amountCents)}
+        {loan.interest === 'simple' && (
+          <span className="split">
+            {p.toInterestCents === 0
+              ? 'All principal'
+              : p.toPrincipalCents === 0
+                ? 'All interest'
+                : `${money(p.toInterestCents)} interest · ${money(p.toPrincipalCents)} principal`}
+          </span>
+        )}
+      </td>
       <td className={`num strong ${p.balanceAfterCents < 0 ? 'is-over' : ''}`}>
         {p.balanceAfterCents < 0 ? `${money(-p.balanceAfterCents)} over` : money(p.balanceAfterCents)}
       </td>

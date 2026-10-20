@@ -8,6 +8,7 @@ use crate::ledger::{LoanInput, LoanPatch, PaymentInput, PaymentPatch};
 use crate::model::{Method, Payment};
 use crate::money::parse_amount;
 use crate::store::Store;
+use crate::interest::{parse_rate, Interest};
 use crate::{date, statement, transfer};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -38,6 +39,18 @@ fn amount(a: Args, what: &str) -> Result<Option<i64>> {
 
 fn method(a: Args) -> Result<Option<Method>> {
     a.opt_str("method")?.map(Method::parse).transpose()
+}
+
+/// The interest as chosen in the loan form: `interest` is "none" or
+/// "simple", and `rate` is the yearly rate as typed ("5.25").
+fn interest(a: Args) -> Result<Option<Interest>> {
+    match a.opt_str("interest")? {
+        None => Ok(None),
+        Some(kind) if kind.trim().eq_ignore_ascii_case("simple") => {
+            Ok(Some(Interest::Simple(parse_rate(a.opt_str("rate")?.unwrap_or(""))?)))
+        }
+        Some(kind) => Interest::from_parts(kind, 0).map(Some),
+    }
 }
 
 fn text(a: Args, key: &str) -> Result<Option<String>> {
@@ -89,10 +102,12 @@ impl Api {
     pub fn call_json(&mut self, cmd: &str, args: &Json) -> Result<Json> {
         let a = Args::new(args);
         let s = &mut self.store;
+        // Balances with interest depend on the day.
+        let today = today(a)?;
         Ok(match cmd {
             "app.bootstrap" => Json::obj()
                 .with("version", VERSION)
-                .with("loans", Json::Arr(s.loans().iter().map(|l| l.view()).collect())),
+                .with("loans", Json::Arr(s.loans().iter().map(|l| l.view(&today)).collect())),
 
             "loans.create" => {
                 let principal = amount(a, "loan amount")?.ok_or_else(|| Error::invalid("Enter the loan amount."))?;
@@ -102,8 +117,9 @@ impl Api {
                     borrower: a.opt_str("borrower")?.unwrap_or("").to_string(),
                     principal_cents: principal,
                     start_date: a.opt_str("startDate")?.unwrap_or("").to_string(),
+                    interest: interest(a)?.unwrap_or(Interest::None),
                 })?;
-                loan.view()
+                loan.view(&today)
             }
             "loans.update" => s
                 .update_loan(
@@ -114,9 +130,10 @@ impl Api {
                         borrower: text(a, "borrower")?,
                         principal_cents: amount(a, "loan amount")?,
                         start_date: text(a, "startDate")?,
+                        interest: interest(a)?,
                     },
                 )?
-                .view(),
+                .view(&today),
             "loans.delete" => s.delete_loan(a.req_str("id")?)?.to_json(),
 
             "payments.add" => {
@@ -152,7 +169,7 @@ impl Api {
             }
 
             "import.preview" => {
-                let changes = transfer::preview(s, a.req_str("text")?)?;
+                let changes = transfer::preview(s, a.req_str("text")?, &today)?;
                 Json::obj().with("loans", changes.to_json())
             }
             "import.apply" => {
@@ -182,7 +199,7 @@ impl Api {
                     }
                 } else {
                     Export {
-                        bytes: statement::csv(loan).into_bytes(),
+                        bytes: statement::csv(loan, &today).into_bytes(),
                         file_name: format!("{stem}.csv"),
                         mime: "text/csv; charset=utf-8",
                     }
@@ -272,5 +289,37 @@ mod tests {
             .unwrap();
         assert_eq!(pdf.file_name, "car-2026-10-19.pdf");
         assert!(api.call("nope.nope", "{}").is_err());
+    }
+
+    #[test]
+    fn simple_interest_loans() {
+        let mut api = Api::new(Store::in_memory());
+        let bad = api.call(
+            "loans.create",
+            r#"{"name":"Car","lender":"Rob","borrower":"Sam","amount":"1000","startDate":"2026-01-01","interest":"simple","rate":""}"#,
+        );
+        assert!(bad.unwrap_err().contains("Enter the interest rate."));
+        let loan = call(
+            &mut api,
+            "loans.create",
+            r#"{"name":"Car","lender":"Rob","borrower":"Sam","amount":"1000","startDate":"2026-01-01","interest":"simple","rate":"6%","today":"2026-01-31"}"#,
+        );
+        let id = loan.get("id").unwrap().as_str().unwrap().to_string();
+        assert_eq!(loan.get("interest").unwrap().as_str(), Some("simple"));
+        assert_eq!(loan.get("interestRate").unwrap().as_i64(), Some(6_000));
+        assert_eq!(loan.get("rateLabel").unwrap().as_str(), Some("6%"));
+        assert_eq!(loan.get("balanceCents").unwrap().as_i64(), Some(100_493));
+
+        // An export with interest is format 2, which older versions refuse.
+        let x = api.export("export.data", &Json::parse(r#"{"today":"2026-10-19"}"#).unwrap()).unwrap();
+        let text = String::from_utf8(x.bytes).unwrap();
+        assert!(text.contains(r#""formatVersion":2"#));
+
+        // Switching to no interest drops it from the balance.
+        let none = call(&mut api, "loans.update", &format!(r#"{{"id":"{id}","interest":"none","today":"2026-01-31"}}"#));
+        assert_eq!(none.get("balanceCents").unwrap().as_i64(), Some(100_000));
+        assert_eq!(none.get("interestRate").unwrap().as_i64(), Some(0));
+        let x = api.export("export.data", &Json::parse(r#"{"today":"2026-10-19"}"#).unwrap()).unwrap();
+        assert!(String::from_utf8(x.bytes).unwrap().contains(r#""formatVersion":1"#));
     }
 }

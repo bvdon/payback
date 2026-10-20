@@ -1,7 +1,7 @@
 // Typed wrappers over the core commands (see payback-core/src/api.rs).
 
 import { call, exportFile } from './transport';
-import type { Bootstrap, ImportChange, Loan, Payment, PaymentFields } from './types';
+import type { Bootstrap, ImportChange, InterestKind, Loan, Payment, PaymentFields } from './types';
 import { todayIso } from '../lib/format';
 
 export interface LoanFields {
@@ -10,13 +10,17 @@ export interface LoanFields {
   borrower: string;
   amount: string;
   startDate: string;
+  interest: InterestKind;
+  /** Yearly rate as typed, like "5.25". Ignored without interest. */
+  rate: string;
 }
 
 export const api = {
-  bootstrap: () => call<Bootstrap>('app.bootstrap'),
+  // Balances with interest depend on the day, so these send today's date.
+  bootstrap: () => call<Bootstrap>('app.bootstrap', { today: todayIso() }),
 
-  createLoan: (f: LoanFields) => call<Loan>('loans.create', f),
-  updateLoan: (id: string, f: LoanFields) => call<Loan>('loans.update', { id, ...f }),
+  createLoan: (f: LoanFields) => call<Loan>('loans.create', { ...f, today: todayIso() }),
+  updateLoan: (id: string, f: LoanFields) => call<Loan>('loans.update', { id, ...f, today: todayIso() }),
   deleteLoan: (id: string) => call<Loan>('loans.delete', { id }),
 
   addPayment: (loanId: string, f: PaymentFields) => call<Payment>('payments.add', { loanId, ...f }),
@@ -34,7 +38,7 @@ export const api = {
       createdAt: p.createdAt,
     }),
 
-  importPreview: (text: string) => call<{ loans: ImportChange[] }>('import.preview', { text }),
+  importPreview: (text: string) => call<{ loans: ImportChange[] }>('import.preview', { text, today: todayIso() }),
   importApply: (text: string, loanIds: string[]) =>
     call<{ added: number; updated: number }>('import.apply', { text, loanIds }),
 
