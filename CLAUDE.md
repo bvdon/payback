@@ -15,7 +15,7 @@ v0.1.3 built on 2026-10-19 (0.1.1 added lender and borrower, 0.1.2 added the Mac
 - The universal Mac DMG builds and launches (`releases/Payback-0.1.3.dmg`).
 - The Windows setup `.exe` is cross-compiled from a Mac (`releases/Payback-0.1.3-windows-setup.exe`).
 
-- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. Releases v0.1.1 and v0.1.2 are both built by Actions and published, each with `.dmg`, `-setup.exe` and `.msi`. `/releases/latest` points to v0.1.2.
+- **GitHub:** public repo at https://github.com/bvdon/payback, created 2026-10-19. The first CI run passed on macOS and Windows. Releases v0.1.1–v0.1.3 are built by Actions and published. From v0.1.3 each one has `.dmg`, `-setup.exe`, `.msi`, `.deb`, `.rpm` and `.AppImage`, and `/releases/latest` points to v0.1.3. The Linux build passed on its first run.
 
 **Not done yet:**
 - No installer has been run on a real Windows PC or Linux desktop.
